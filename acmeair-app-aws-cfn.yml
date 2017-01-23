@@ -1,0 +1,167 @@
+---
+Parameters:
+  MinNumInstances:
+    Type: Number
+    Default: '1'
+    Description: Minimum number of instances auto scaler should maintain
+  MaxNumInstances:
+    Type: Number
+    Default: '1'
+    Description: Maximum number of instances auto scaler can create
+  DesiredNumInstances:
+    Type: Number
+    Default: '1'
+    Description: Number of instances we would like right now
+  InstancePort:
+    Type: Number
+    Default: '9080'
+    Description: Port where the app accepts connections
+  ImageID:
+    Type: AWS::EC2::Image::Id
+    Default: ami-40d28157
+    Description: ID of AMI which will be used to launching new instances
+  EC2InstanceType:
+    Type: String
+    Default: t2.micro
+    Description: EC2 instance type that should be used
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: mtest-accion
+    Description: Public/private key pair which instances will use to authenticate logon requests
+  IAMRole:
+    Description: IAM profile/role instances should have
+    Type: String
+    Default: PerfaccionS3
+  VPCId:
+    Description: VPC where instances should be deployed to
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-5fe23535
+  SubnetsToUse:
+    Description: List of subnets where instances can be deployed
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-55e2353f
+  NodeName:
+    Type: String
+    Default: Acme-AppNode
+    Description: Instance Name
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment where we want to deploy
+
+Resources:
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      EbsOptimized: false
+      IamInstanceProfile:
+        Ref: IAMRole
+      ImageId:
+        Ref: ImageID
+      InstanceMonitoring: false
+      InstanceType:
+        Ref: EC2InstanceType
+      KeyName:
+        Ref: KeyPairName
+      PlacementTenancy: default
+      SecurityGroups:
+      - Ref: EC2SecurityGroup
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "#!/bin/bash -x \n"
+            - "apt-get update \n"
+            - "apt-get install awscli puppet librarian-puppet -y\n"
+            - "mkdir -p /opt/acmeair; cd /opt/acmeair\n"
+            - "aws s3 cp s3://perfaccion/acmeair/ . --recursive\n"
+            - "librarian-puppet install\n"
+            - "mkdir -p /etc/facter/facts.d\n"
+            - echo node=
+            - Ref: NodeName
+            - " > /etc/facter/facts.d/node.txt\n"
+            - echo env=
+            - Ref: Environment
+            - " > /etc/facter/facts.d/env.txt\n"
+            - "puppet apply /opt/acmeair/manifests/init.pp \n" 
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: 480
+      DesiredCapacity:
+        Ref: DesiredNumInstances
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      LoadBalancerNames:
+      - Ref: LoadBalancer
+      LaunchConfigurationName:
+        Ref: LaunchConfiguration
+      MaxSize:
+        Ref: MaxNumInstances
+      MinSize:
+        Ref: MinNumInstances
+      Tags:
+      - Key: Name
+        Value: "acmeair-app-dev"
+        PropagateAtLaunch: 'true'
+      VPCZoneIdentifier:
+        Ref: SubnetsToUse
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Scheme: internal
+      Subnets:
+        Ref: SubnetsToUse
+      SecurityGroups:
+      - Ref: ELBSecurityGroup
+      Listeners:
+      - LoadBalancerPort:
+          Ref: InstancePort
+        InstancePort:
+          Ref: InstancePort
+        Protocol: TCP
+      HealthCheck:
+        Target: HTTP:9080/
+        HealthyThreshold: 3
+        UnhealthyThreshold: 5
+        Interval: 6
+        Timeout: 4
+
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "SG for acmeapp-elb"
+      VpcId:
+        Ref: VPCId
+      Tags:
+      - Key: Name
+        Value: "SG for acmeapp-elb"
+
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 9080
+        ToPort: 9080
+        CidrIp: '0.0.0.0/0'
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "SG for acmeair-app"
+      VpcId:
+        Ref: VPCId
+      Tags:
+      - Key: Name
+        Value: "SG for acmeair-app"
+
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 9080
+        ToPort: 9080
+        CidrIp: '0.0.0.0/0'
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: '0.0.0.0/0'
