@@ -26,7 +26,7 @@ Parameters:
     Description: EC2 instance type that should be used
   KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
-    Default: mtest-accion
+    Default: mkey-accion
     Description: Public/private key pair which instances will use to authenticate logon requests
   IAMRole:
     Description: IAM profile/role instances should have
