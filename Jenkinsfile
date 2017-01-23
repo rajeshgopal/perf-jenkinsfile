@@ -1,11 +1,11 @@
 node {
     env.GENERATE_REPORTS = 'true'
     env.CI = 'true'
-    def yamlFilename = "main-${environment}.yml"
+    def yamlFilename = "acmeair-app-aws-cfn.yml"
     def workDir = pwd()
-    def stackName = "${clusterName}-${environment}"
-    def fullStackName = "${stackName}-${env.BUILD_NUMBER}"
-
+    def stackName = "Acmeair-dev-${env.BUILD_NUMBER}"
+    def region = "us-east-1"
+    
     catchError {
         stage 'Checkout'
 
@@ -18,38 +18,20 @@ node {
 
         stage 'Prep'
 
-        sh "aws cloudformation validate-template --template-body file:///${workDir}/${yamlFilename} --region ${region}"
         
-        stage 'Deploy'
+        stage 'Deploy Test App - Acmeair'
 
-        sh """aws cloudformation create-stack --stack-name ${fullStackName} \
-                --region ${region} --template-body file:///${workDir}/${yamlFilename} \
-                --parameters \
-                    ParameterKey=MinNumInstances,ParameterValue=1 \
-                    ParameterKey=MaxNumInstances,ParameterValue=1 \
-                    ParameterKey=DesiredNumInstances,ParameterValue=1 \
-                    ParameterKey=ImageID,ParameterValue=${amiId} \
-                    ParameterKey=EC2InstanceType,ParameterValue=${instanceType} \
-                    ParameterKey=KeyPairName,ParameterValue=${key} \
-                    ParameterKey=VPCId,ParameterValue=${vpc_id} \
-                    ParameterKey=SubnetsToUse,ParameterValue='\"${subnets}\"' \
-                    ParameterKey=GaleraClusterName,ParameterValue=${clusterName} \
-                    ParameterKey=PackageVersion,ParameterValue=${version} \
-                    ParameterKey=ConsulServerAddress,ParameterValue=${consulServer} \
-                    ParameterKey=Environment,ParameterValue=${environment} \
-                    ParameterKey=SnapshotID,ParameterValue=${snapshotId} \
-                    ParameterKey=SnapshotVolumeSize,ParameterValue=${snapshotVolumeSize} \
-                    ParameterKey=SessionTimeout,ParameterValue=${sessionIdleTimeout} \n
-                    
+        sh """aws cloudformation create-stack --stack-name ${stackName} \
+                --region ${region} --template-body file:///${workDir}/${yamlFilename} \n
+                
               aws cloudformation wait stack-create-complete \
-                --stack-name ${fullStackName} --region ${region} \n
+                --stack-name ${stackName} --region ${region} \n
              """
 
 
-        stage 'Verify'
+        stage 'Invoke Perfaccion'
 
-        stage 'Promote'
-
+        
         
     }
 }
